@@ -8,6 +8,7 @@ from playsound import playsound
 import os
 import sys
 import optparse
+from multiprocessing import Process
 
 CWD = os.path.dirname(os.path.abspath(__file__))
 
@@ -47,6 +48,9 @@ def init_conf():
     parser.add_option("-n", "--sms_number", default='',
                       action="store", type="string", dest="sms_num",
                       help = "cellphone number for SMS alert")
+    parser.add_option("-i", "--insane", 
+                      action="store_true", dest="insane",
+                      help = "insane mode: desperately grab slot and auto checkout")
 
     (options, args) = parser.parse_args()
 
@@ -60,6 +64,7 @@ def init_conf():
 def do_check_wf_cart(conf):
     try:
         
+        play_process = Process(target=playsound, args=('success.mp3',)) # alerting process
         chrome_options = Options()  
         #chrome_options.add_argument("--headless")  
         #chrome_options.add_argument("--window-size=%s" % WINDOW_SIZE)
@@ -100,7 +105,10 @@ def do_check_wf_cart(conf):
 
         
         slot_found = False
-        ntrial = 0;
+        ntrial = 0
+        
+       
+
         while slot_found == False:
             e = driver.find_elements_by_class_name(
             'ufss-date-select-toggle-text-availability')
@@ -108,29 +116,48 @@ def do_check_wf_cart(conf):
                 print(i.text)
                 if (i.text != 'Not available'):
                     slot_found = True
-                    playsound(CWD+'\\success.mp3', block=False)
+                    play_process.start()  # async play music
                     if conf.smtp_user != '':
                         send_mail(conf.smtp_serv,
                                   conf.smtp_user, conf.smtp_pass,
                                   conf.smtp_user, conf.sms_num+'@txt.att.net',
                                   'pangbot alert!')
                     
-                    input('time slot found! Please checkout in the browser then push any key to continue.')
+                    if conf.insane == False:
+                        input('time slot found! Please checkout in the browser then push any key to continue.')
+                    else:
+                        slots = driver.find_elements_by_class_name('ufss-slot-toggle-native-button')
+                        for slot in slots:
+                            print("slot text: %s" % (slot.text))
+                            if slot.text == 'FREE':
+                                slot.click()
+                                driver.find_elements_by_class_name('a-button-input').submit()
+                                sleep(random())
+                                driver.find_elements_by_class_name('a-button-input').submit()
+                                driver.find_element_by_name('placeYourOrder1').submit()
+                                input('Order placed. Play check the order status and push any key to continue')
+
+                                break
+                            
+
+
                     break
             
-            sleep_time = randrange(10,30);
+            sleep_time = randrange(20,40)
             print("sleeping %d.." % (sleep_time))
             sleep(sleep_time)
             driver.refresh()
-            ntrial += 1;
+            ntrial += 1
             print("retry %d times.\n" % ntrial)
             
                               
     except:
         print('error executing actions.')
     finally:
-        sleep(3)
-        #driver.quit()
+        sleep(20)
+        play_process.terminate()
+        play_process.join(1)
+        driver.quit()
             
 def do_check_af_cart(conf):
     try:
